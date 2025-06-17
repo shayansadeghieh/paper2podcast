@@ -31,49 +31,96 @@ const Upload = () => {
 
     setUploadedFiles((prev) => [...prev, ...newFiles]);
 
-    // Simulate file upload and processing
+    // Upload files to backend
     newFiles.forEach((uploadedFile) => {
-      simulateUpload(uploadedFile.id);
+      uploadFile(uploadedFile);
     });
   }, []);
 
-  const simulateUpload = (fileId: string) => {
-    // Simulate upload progress
-    const uploadInterval = setInterval(() => {
+  const uploadFile = async (uploadedFile: UploadedFile) => {
+    const formData = new FormData();
+    formData.append('file', uploadedFile.file);
+
+    try {
+      // Upload file to backend
+      const uploadResponse = await fetch('http://localhost:8080/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const uploadResult = await uploadResponse.json();
+      
+      // Update file with backend ID and start polling for status
       setUploadedFiles((prev) =>
         prev.map((file) => {
-          if (file.id === fileId && file.status === 'uploading') {
-            const newProgress = Math.min(file.progress + 10, 100);
-            if (newProgress === 100) {
-              clearInterval(uploadInterval);
-              setTimeout(() => simulateProcessing(fileId), 500);
-              return { ...file, progress: newProgress, status: 'processing' };
-            }
-            return { ...file, progress: newProgress };
+          if (file.id === uploadedFile.id) {
+            return { ...file, id: uploadResult.id, status: 'processing' };
           }
           return file;
         })
       );
-    }, 200);
+
+      // Start polling for processing status
+      pollProcessingStatus(uploadResult.id);
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadedFiles((prev) =>
+        prev.map((file) => {
+          if (file.id === uploadedFile.id) {
+            return { ...file, status: 'error' };
+          }
+          return file;
+        })
+      );
+    }
   };
 
-  const simulateProcessing = (fileId: string) => {
-    // Simulate AI processing
-    setTimeout(() => {
-      setUploadedFiles((prev) =>
-        prev.map((file) => {
-          if (file.id === fileId) {
-            return {
-              ...file,
-              status: 'completed',
-              progress: 100,
-              podcastUrl: '/api/podcast/' + fileId,
-            };
-          }
-          return file;
-        })
-      );
-    }, 3000);
+  const pollProcessingStatus = (fileId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusResponse = await fetch(`http://localhost:8080/api/status/${fileId}`);
+        
+        if (!statusResponse.ok) {
+          throw new Error('Status check failed');
+        }
+
+        const status = await statusResponse.json();
+        
+        setUploadedFiles((prev) =>
+          prev.map((file) => {
+            if (file.id === fileId) {
+              return {
+                ...file,
+                status: status.status,
+                progress: status.progress,
+                podcastUrl: status.podcastUrl,
+              };
+            }
+            return file;
+          })
+        );
+
+        // Stop polling when completed or error
+        if (status.status === 'completed' || status.status === 'error') {
+          clearInterval(pollInterval);
+        }
+      } catch (error) {
+        console.error('Status polling error:', error);
+        clearInterval(pollInterval);
+        setUploadedFiles((prev) =>
+          prev.map((file) => {
+            if (file.id === fileId) {
+              return { ...file, status: 'error' };
+            }
+            return file;
+          })
+        );
+      }
+    }, 1000); // Poll every second
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -89,6 +136,26 @@ const Upload = () => {
 
   const removeFile = (fileId: string) => {
     setUploadedFiles((prev) => prev.filter((file) => file.id !== fileId));
+  };
+
+  const handleListenToPodcast = async (fileId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/podcast/${fileId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get podcast');
+      }
+
+      const result = await response.json();
+      console.log('Podcast result:', result);
+      
+      // For now, just show an alert. In a real implementation, 
+      // you'd handle the audio file or redirect to a player
+      alert(`Podcast ready! ${result.message}`);
+    } catch (error) {
+      console.error('Error getting podcast:', error);
+      alert('Error loading podcast. Please try again.');
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -219,7 +286,10 @@ const Upload = () => {
 
                       <div className="flex items-center space-x-3">
                         {uploadedFile.status === 'completed' && (
-                          <button className="btn-primary text-sm px-4 py-2">
+                          <button 
+                            className="btn-primary text-sm px-4 py-2"
+                            onClick={() => handleListenToPodcast(uploadedFile.id)}
+                          >
                             Listen to Podcast
                           </button>
                         )}
