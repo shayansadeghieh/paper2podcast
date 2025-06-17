@@ -1,6 +1,4 @@
-# AudioCrawl 🎙️
-
-**Transform Research Papers into Engaging Podcasts**
+# AudioCrawl
 
 AudioCrawl is a modern web application that uses AI to analyze research papers, crawl the web for additional context, and generate professional podcast summaries that make complex research accessible to everyone.
 
